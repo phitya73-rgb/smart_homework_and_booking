@@ -2,7 +2,7 @@ import { HomeworkItem, HomeworkStatus } from '@/types/homework';
 import { BookingSlot, BookedStudent } from '@/types/booking';
 import { INITIAL_HOMEWORK, INITIAL_BOOKINGS } from '@/lib/constants';
 import { User } from '@/types/auth';
-import { supabase } from './supabase'; // เพิ่มการเชื่อมต่อ Supabase
+import { supabase } from './supabase.js';
 
 const STORAGE_HOMEWORK_KEY = 'homework_app_items_v3';
 const STORAGE_BOOKINGS_KEY = 'booking_app_slots_v3';
