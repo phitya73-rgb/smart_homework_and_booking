@@ -2,6 +2,7 @@ import { HomeworkItem, HomeworkStatus } from '@/types/homework';
 import { BookingSlot, BookedStudent } from '@/types/booking';
 import { INITIAL_HOMEWORK, INITIAL_BOOKINGS } from '@/lib/constants';
 import { User } from '@/types/auth';
+import { supabase } from './supabase'; // เพิ่มการเชื่อมต่อ Supabase
 
 const STORAGE_HOMEWORK_KEY = 'homework_app_items_v3';
 const STORAGE_BOOKINGS_KEY = 'booking_app_slots_v3';
@@ -42,18 +43,11 @@ export const dataService = {
       localStorage.setItem(STORAGE_HOMEWORK_KEY, JSON.stringify(updated));
     }
 
-    // Try sending to Google Sheets API
+    // 🟢 ส่งข้อมูลไปเก็บบน Supabase (แทน Google Sheets)
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'addHomework',
-          ...newItem,
-        }),
-      }).catch((e) => console.warn('Sync to Google Sheets background notice:', e));
+      await supabase.from('homeworks').insert([newItem]);
     } catch (e) {
-      console.warn('API error:', e);
+      console.warn('Supabase API error:', e);
     }
 
     return newItem;
@@ -67,18 +61,11 @@ export const dataService = {
       localStorage.setItem(STORAGE_HOMEWORK_KEY, JSON.stringify(updated));
     }
 
-    // Try sending to Google Sheets API
+    // 🟢 อัปเดตข้อมูลบน Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'editHomework',
-          ...updatedItem,
-        }),
-      }).catch((e) => console.warn('Sync edit to Google Sheets:', e));
+      await supabase.from('homeworks').update(updatedItem).eq('id', updatedItem.id);
     } catch (e) {
-      console.warn('API error:', e);
+      console.warn('Supabase API error:', e);
     }
 
     return updated;
@@ -92,18 +79,11 @@ export const dataService = {
       localStorage.setItem(STORAGE_HOMEWORK_KEY, JSON.stringify(updated));
     }
 
-    // Try sending to Google Sheets API
+    // 🟢 ลบข้อมูลบน Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'deleteHomework',
-          id,
-        }),
-      }).catch((e) => console.warn('Sync delete to Google Sheets:', e));
+      await supabase.from('homeworks').delete().eq('id', id);
     } catch (e) {
-      console.warn('API error:', e);
+      console.warn('Supabase API error:', e);
     }
 
     return updated;
@@ -116,6 +96,8 @@ export const dataService = {
     user?: User
   ): Promise<HomeworkItem[]> {
     const list = this.getHomeworkList();
+    let updatedItemData: HomeworkItem | null = null;
+
     const updated = list.map((item) => {
       if (item.id === id) {
         const currentSubmissions = item.submissions || [];
@@ -138,7 +120,7 @@ export const dataService = {
           newSubmissions = newSubmissions.filter((s) => s.username !== username);
         }
 
-        return {
+        updatedItemData = {
           ...item,
           statusByUser: {
             ...(item.statusByUser || {}),
@@ -146,6 +128,7 @@ export const dataService = {
           },
           submissions: newSubmissions,
         };
+        return updatedItemData;
       }
       return item;
     });
@@ -154,26 +137,19 @@ export const dataService = {
       localStorage.setItem(STORAGE_HOMEWORK_KEY, JSON.stringify(updated));
     }
 
-    // Try sending to Google Sheets API
+    // 🟢 อัปเดตสถานะการส่งงานไปยัง Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'updateHomeworkStatus',
-          id,
-          username,
-          status,
-          user: user
-            ? {
-                name: user.name,
-                classLabel: user.classLabel,
-              }
-            : undefined,
-        }),
-      }).catch((e) => console.warn('Sync notice:', e));
+      if (updatedItemData) {
+        await supabase
+          .from('homeworks')
+          .update({
+            statusByUser: updatedItemData.statusByUser,
+            submissions: updatedItemData.submissions
+          })
+          .eq('id', id);
+      }
     } catch (e) {
-      console.warn('API error:', e);
+      console.warn('Supabase API error:', e);
     }
 
     return updated;
@@ -212,18 +188,11 @@ export const dataService = {
       localStorage.setItem(STORAGE_BOOKINGS_KEY, JSON.stringify(updated));
     }
 
-    // Try sending to Google Sheets API
+    // 🟢 ส่งข้อมูลรอบจองไป Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'addBookingSlot',
-          ...newSlot,
-        }),
-      }).catch((e) => console.warn('Sync notice:', e));
+      await supabase.from('booking_slots').insert([newSlot]);
     } catch (e) {
-      console.warn('API error:', e);
+      console.warn('Supabase API error:', e);
     }
 
     return newSlot;
@@ -248,7 +217,7 @@ export const dataService = {
       return { success: false, message: 'ขออภัย รอบเวลานี้มีผู้จองเต็มแล้ว', slots };
     }
 
-    const displayName = user.classLabel ? `${user.name} (${user.classLabel})` : user.name;
+    const displayName = user.classLabel ? ${user.name} (${user.classLabel}) : user.name;
 
     const newBooking: BookedStudent = {
       username: user.username,
@@ -257,11 +226,14 @@ export const dataService = {
       bookedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
     };
 
+    let updatedBookedStudents: BookedStudent[] = [];
+
     const updated = slots.map((s) => {
       if (s.id === slotId) {
+        updatedBookedStudents = [...s.bookedStudents, newBooking];
         return {
           ...s,
-          bookedStudents: [...s.bookedStudents, newBooking],
+          bookedStudents: updatedBookedStudents,
         };
       }
       return s;
@@ -271,25 +243,14 @@ export const dataService = {
       localStorage.setItem(STORAGE_BOOKINGS_KEY, JSON.stringify(updated));
     }
 
-    // Sync to Google Sheets
+    // 🟢 บันทึกรายชื่อคนจองไป Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'bookSlot',
-          id: slotId,
-          user: {
-            username: user.username,
-            name: displayName,
-            role: user.role,
-            grade: user.grade,
-            room: user.room,
-          },
-        }),
-      }).catch((e) => console.warn('Sync notice:', e));
+      await supabase
+        .from('booking_slots')
+        .update({ bookedStudents: updatedBookedStudents })
+        .eq('id', slotId);
     } catch (e) {
-      console.warn(e);
+      console.warn('Supabase API error:', e);
     }
 
     return { success: true, slots: updated };
@@ -300,11 +261,14 @@ export const dataService = {
     username: string
   ): Promise<{ success: boolean; slots: BookingSlot[] }> {
     const slots = this.getBookingSlots();
+    let remainingStudents: BookedStudent[] = [];
+
     const updated = slots.map((s) => {
       if (s.id === slotId) {
+        remainingStudents = s.bookedStudents.filter((b) => b.username !== username);
         return {
           ...s,
-          bookedStudents: s.bookedStudents.filter((b) => b.username !== username),
+          bookedStudents: remainingStudents,
         };
       }
       return s;
@@ -314,18 +278,14 @@ export const dataService = {
       localStorage.setItem(STORAGE_BOOKINGS_KEY, JSON.stringify(updated));
     }
 
+    // 🟢 อัปเดตรายชื่อเมื่อยกเลิกจองใน Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'cancelBooking',
-          id: slotId,
-          username,
-        }),
-      }).catch((e) => console.warn('Sync notice:', e));
+      await supabase
+        .from('booking_slots')
+        .update({ bookedStudents: remainingStudents })
+        .eq('id', slotId);
     } catch (e) {
-      console.warn(e);
+      console.warn('Supabase API error:', e);
     }
 
     return { success: true, slots: updated };
@@ -339,17 +299,11 @@ export const dataService = {
       localStorage.setItem(STORAGE_BOOKINGS_KEY, JSON.stringify(updated));
     }
 
+    // 🟢 อัปเดตรอบจองที่แก้ไขใน Supabase
     try {
-      fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'editBookingSlot',
-          ...updatedSlot,
-        }),
-      }).catch((e) => console.warn('Sync edit slot notice:', e));
+      await supabase.from('booking_slots').update(updatedSlot).eq('id', updatedSlot.id);
     } catch (e) {
-      console.warn('API error:', e);
+      console.warn('Supabase API error:', e);
     }
 
     return updated;
@@ -361,6 +315,14 @@ export const dataService = {
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_BOOKINGS_KEY, JSON.stringify(updated));
     }
+    
+    // 🟢 ลบรอบจองใน Supabase
+    try {
+      await supabase.from('booking_slots').delete().eq('id', slotId);
+    } catch (e) {
+      console.warn('Supabase API error:', e);
+    }
+    
     return updated;
   },
 
