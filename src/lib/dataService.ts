@@ -217,7 +217,7 @@ export const dataService = {
       return { success: false, message: 'ขออภัย รอบเวลานี้มีผู้จองเต็มแล้ว', slots };
     }
 
-    const displayName = user.classLabel ? ${user.name} (${user.classLabel}) : user.name;
+   const displayName = user.classLabel ? `${user.name} (${user.classLabel})` : user.name;
 
     const newBooking: BookedStudent = {
       username: user.username,
